@@ -53,11 +53,13 @@ import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import com.ramcosta.composedestinations.navigation.EmptyDestinationsNavigator
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import com.rifsxd.ksunext.R
 import com.rifsxd.ksunext.ui.component.KeyEventBlocker
+import com.rifsxd.ksunext.ui.util.FlashResult
 import com.rifsxd.ksunext.ui.util.LkmSelection
 import com.rifsxd.ksunext.ui.util.LocalSnackbarHost
 import com.rifsxd.ksunext.ui.util.flashModule
@@ -76,6 +78,22 @@ enum class FlashingStatus {
     FAILED
 }
 
+// Lets you flash modules sequentially when mutiple zipUris are selected
+fun flashModulesSequentially(
+    uris: List<Uri>,
+    onStdout: (String) -> Unit,
+    onStderr: (String) -> Unit
+): FlashResult {
+    for (uri in uris) {
+        flashModule(uri, onStdout, onStderr).apply {
+            if (code != 0) {
+                return FlashResult(code, err, showReboot)
+            }
+        }
+    }
+    return FlashResult(0, "", true)
+}
+
 /**
  * @author weishu
  * @date 2023/1/1.
@@ -86,7 +104,7 @@ enum class FlashingStatus {
 fun FlashScreen(navigator: DestinationsNavigator, flashIt: FlashIt) {
 
     var text by rememberSaveable { mutableStateOf("") }
-    var tempText : String
+    var tempText: String
     val logContent = rememberSaveable { StringBuilder() }
     var showFloatAction by rememberSaveable { mutableStateOf(false) }
 
@@ -107,16 +125,7 @@ fun FlashScreen(navigator: DestinationsNavigator, flashIt: FlashIt) {
             return@LaunchedEffect
         }
         withContext(Dispatchers.IO) {
-            flashIt(flashIt, onFinish = { showReboot, code ->
-                if (code != 0) {
-                    text += "Error: exit code = $code.\nPlease save and check the log.\n"
-                }
-                if (showReboot) {
-                    text += "\n\n\n"
-                    showFloatAction = true
-                }
-                flashing = if (code == 0) FlashingStatus.SUCCESS else FlashingStatus.FAILED
-            }, onStdout = {
+            flashIt(flashIt, onStdout = {
                 tempText = "$it\n"
                 if (tempText.startsWith("[H[J")) { // clear command
                     text = tempText.substring(6)
@@ -126,7 +135,16 @@ fun FlashScreen(navigator: DestinationsNavigator, flashIt: FlashIt) {
                 logContent.append(it).append("\n")
             }, onStderr = {
                 logContent.append(it).append("\n")
-            })
+            }).apply {
+                if (code != 0) {
+                    text += "Error code: $code.\n $err Please save and check the log.\n"
+                }
+                if (showReboot) {
+                    text += "\n\n\n"
+                    showFloatAction = true
+                }
+                flashing = if (code == 0) FlashingStatus.SUCCESS else FlashingStatus.FAILED
+            }
         }
     }
 
@@ -143,7 +161,7 @@ fun FlashScreen(navigator: DestinationsNavigator, flashIt: FlashIt) {
                         val date = format.format(Date())
                         val file = File(
                             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                            "KernelSU_install_log_${date}.log"
+                            "KernelSU_Next_install_log_${date}.log"
                         )
                         file.writeText(logContent.toString())
                         snackBarHost.showSnackbar("Log saved to ${file.absolutePath}")
@@ -200,7 +218,7 @@ sealed class FlashIt : Parcelable {
     data class FlashBoot(val boot: Uri? = null, val lkm: LkmSelection, val ota: Boolean) :
         FlashIt()
 
-    data class FlashModule(val uri: Uri) : FlashIt()
+    data class FlashModules(val uris: List<Uri>) : FlashIt()
 
     data object FlashRestore : FlashIt()
 
@@ -208,25 +226,26 @@ sealed class FlashIt : Parcelable {
 }
 
 fun flashIt(
-    flashIt: FlashIt, onFinish: (Boolean, Int) -> Unit,
+    flashIt: FlashIt,
     onStdout: (String) -> Unit,
     onStderr: (String) -> Unit
-) {
-    when (flashIt) {
+): FlashResult {
+    return when (flashIt) {
         is FlashIt.FlashBoot -> installBoot(
             flashIt.boot,
             flashIt.lkm,
             flashIt.ota,
-            onFinish,
             onStdout,
             onStderr
         )
 
-        is FlashIt.FlashModule -> flashModule(flashIt.uri, onFinish, onStdout, onStderr)
+        is FlashIt.FlashModules -> {
+            flashModulesSequentially(flashIt.uris, onStdout, onStderr)
+        }
 
-        FlashIt.FlashRestore -> restoreBoot(onFinish, onStdout, onStderr)
+        FlashIt.FlashRestore -> restoreBoot(onStdout, onStderr)
 
-        FlashIt.FlashUninstall -> uninstallPermanently(onFinish, onStdout, onStderr)
+        FlashIt.FlashUninstall -> uninstallPermanently(onStdout, onStderr)
     }
 }
 

@@ -55,7 +55,6 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberTopAppBarState
@@ -93,9 +92,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.rifsxd.ksunext.Natives
 import com.rifsxd.ksunext.R
+import com.rifsxd.ksunext.ksuApp
 import com.rifsxd.ksunext.ui.component.ConfirmResult
 import com.rifsxd.ksunext.ui.component.rememberConfirmDialog
 import com.rifsxd.ksunext.ui.component.rememberLoadingDialog
+import com.rifsxd.ksunext.ui.component.SearchAppBar
+import com.rifsxd.ksunext.ui.util.*
 import com.rifsxd.ksunext.ui.util.DownloadListener
 import com.rifsxd.ksunext.ui.util.LocalSnackbarHost
 import com.rifsxd.ksunext.ui.util.download
@@ -106,7 +108,6 @@ import com.rifsxd.ksunext.ui.util.uninstallModule
 import com.rifsxd.ksunext.ui.util.restoreModule
 import com.rifsxd.ksunext.ui.viewmodel.ModuleViewModel
 import com.rifsxd.ksunext.ui.webui.WebUIActivity
-import okhttp3.OkHttpClient
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Destination<RootGraph>
@@ -120,8 +121,8 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
 
     LaunchedEffect(Unit) {
         if (viewModel.moduleList.isEmpty() || viewModel.isNeedRefresh) {
-            viewModel.sortEnabledFirst = prefs.getBoolean("module_sort_enabled_first", false)
-            viewModel.sortActionFirst = prefs.getBoolean("module_sort_action_first", false)
+            viewModel.sortAToZ = prefs.getBoolean("module_sort_a_to_z", true)
+            viewModel.sortZToA = prefs.getBoolean("module_sort_z_to_a", false)
             viewModel.fetchModuleList()
         }
     }
@@ -134,6 +135,8 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
 
     var zipUri by remember { mutableStateOf<Uri?>(null) }
+    var zipUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
     var showConfirmDialog by remember { mutableStateOf(false) }
 
     val webUILauncher = rememberLauncherForActivityResult(
@@ -142,8 +145,12 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                actions = {
+            SearchAppBar(
+                title = { Text(stringResource(R.string.module)) },
+                searchText = viewModel.search,
+                onSearchTextChange = { viewModel.search = it },
+                onClearClick = { viewModel.search = "" },
+                dropdownContent = {
                     var showDropdown by remember { mutableStateOf(false) }
                     IconButton(
                         onClick = { showDropdown = true },
@@ -152,54 +159,66 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
                             imageVector = Icons.Filled.MoreVert,
                             contentDescription = stringResource(id = R.string.settings)
                         )
-                        DropdownMenu(expanded = showDropdown, onDismissRequest = {
-                            showDropdown = false
-                        }) {
-                            DropdownMenuItem(text = {
-                                Text(stringResource(R.string.module_sort_action_first))
-                            }, trailingIcon = {
-                                Checkbox(viewModel.sortActionFirst, null)
-                            }, onClick = {
-                                viewModel.sortActionFirst =
-                                    !viewModel.sortActionFirst
-                                prefs.edit()
-                                    .putBoolean(
-                                        "module_sort_action_first",
-                                        viewModel.sortActionFirst
-                                    )
-                                    .apply()
-                                scope.launch {
-                                    viewModel.fetchModuleList()
+                        DropdownMenu(
+                            expanded = showDropdown,
+                            onDismissRequest = {
+                                showDropdown = false
+                            }
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(stringResource(R.string.module_sort_a_to_z))
+                                },
+                                trailingIcon = {
+                                    Checkbox(checked = viewModel.sortAToZ, onCheckedChange = null)
+                                },
+                                onClick = {
+                                    viewModel.sortAToZ = !viewModel.sortAToZ
+                                    viewModel.sortZToA = false
+                                    prefs.edit()
+                                        .putBoolean("module_sort_a_to_z", viewModel.sortAToZ)
+                                        .putBoolean("module_sort_z_to_a", false)
+                                        .apply()
+                                    scope.launch {
+                                        viewModel.fetchModuleList()
+                                    }
                                 }
-                            })
-                            DropdownMenuItem(text = {
-                                Text(stringResource(R.string.module_sort_enabled_first))
-                            }, trailingIcon = {
-                                Checkbox(viewModel.sortEnabledFirst, null)
-                            }, onClick = {
-                                viewModel.sortEnabledFirst =
-                                    !viewModel.sortEnabledFirst
-                                prefs.edit()
-                                    .putBoolean(
-                                        "module_sort_enabled_first",
-                                        viewModel.sortEnabledFirst
-                                    )
-                                    .apply()
-                                scope.launch {
-                                    viewModel.fetchModuleList()
+                            )
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text(stringResource(R.string.module_sort_z_to_a))
+                                },
+                                trailingIcon = {
+                                    Checkbox(checked = viewModel.sortZToA, onCheckedChange = null)
+                                },
+                                onClick = {
+                                    viewModel.sortZToA = !viewModel.sortZToA
+                                    viewModel.sortAToZ = false
+                                    prefs.edit()
+                                        .putBoolean("module_sort_z_to_a", viewModel.sortZToA)
+                                        .putBoolean("module_sort_a_to_z", false)
+                                        .apply()
+                                    scope.launch {
+                                        viewModel.fetchModuleList()
+                                    }
                                 }
-                            })
+                            )
                         }
                     }
                 },
-                scrollBehavior = scrollBehavior,
-                title = { Text(stringResource(R.string.module)) },
-                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+                scrollBehavior = scrollBehavior
             )
         },
         floatingActionButton = {
             if (!hideInstallButton) {
                 val moduleInstall = stringResource(id = R.string.module_install)
+                val confirmTitle = stringResource(R.string.module)
+                var zipUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+                val confirmDialog = rememberConfirmDialog(onConfirm = {
+                    navigator.navigate(FlashScreenDestination(FlashIt.FlashModules(zipUris)))
+                    viewModel.markNeedRefresh()
+                })
                 val selectZipLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.StartActivityForResult()
                 ) { result ->
@@ -207,18 +226,35 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
                         return@rememberLauncherForActivityResult
                     }
                     val data = result.data ?: return@rememberLauncherForActivityResult
-                    val uri = data.data ?: return@rememberLauncherForActivityResult
+                    val clipData = data.clipData
 
-                    // save the selected Uri and trigger confirmation dialog
-                    zipUri = uri
-                    showConfirmDialog = true
+                    val uris = mutableListOf<Uri>()
+                    if (clipData != null) {
+                        for (i in 0 until clipData.itemCount) {
+                            clipData.getItemAt(i)?.uri?.let { uris.add(it) }
+                        }
+                    } else {
+                        data.data?.let { uris.add(it) }
+                    }
+
+                    // Show confirm dialog with selected zip file(s) name(s)
+                    val moduleNames = uris.mapIndexed { index, uri -> "\n${index + 1}. ${uri.getFileName(context)}" }.joinToString("")
+                    val confirmContent = context.getString(R.string.module_install_prompt_with_name, moduleNames)
+                    zipUris = uris
+                    confirmDialog.showConfirm(
+                        title = confirmTitle,
+                        content = confirmContent,
+                        markdown = true
+                    )
+                    
                 }
 
                 ExtendedFloatingActionButton(
                     onClick = {
-                        // select the zip file to install
+                        // Select the zip files to install
                         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                             type = "application/zip"
+                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                         }
                         selectZipLauncher.launch(intent)
                     },
@@ -230,37 +266,6 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
         snackbarHost = { SnackbarHost(hostState = snackBarHost) }
     ) { innerPadding ->
-        // confirmation dialog
-        if (showConfirmDialog && zipUri != null) {
-            // extract the module name from the zipUri
-            val moduleName = zipUri?.lastPathSegment?.substringAfterLast('/') ?: "Unknown Module"
-
-            AlertDialog(
-                onDismissRequest = { showConfirmDialog = false },
-                confirmButton = {
-                    TextButton(onClick = {
-                        showConfirmDialog = false
-                        navigator.navigate(FlashScreenDestination(FlashIt.FlashModule(zipUri!!)))
-
-                        viewModel.markNeedRefresh()
-
-                    }) {
-                        Text(stringResource(R.string.confirm))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showConfirmDialog = false }) {
-                        Text(stringResource(android.R.string.cancel))
-                    }
-                },
-                title = { Text(stringResource(R.string.confirm_module_installation)) },
-                text = { 
-                    Text(
-                        stringResource(R.string.module_install_prompt_with_name, moduleName)
-                    ) 
-                }
-            )
-        }
 
         when {
             hasMagisk -> {
@@ -283,7 +288,7 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
                     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
                     boxModifier = Modifier.padding(innerPadding),
                     onInstallModule = {
-                        navigator.navigate(FlashScreenDestination(FlashIt.FlashModule(it)))
+                        navigator.navigate(FlashScreenDestination(FlashIt.FlashModules(listOf(it))))
                     },
                     onClickModule = { id, name, hasWebUi ->
                         if (hasWebUi) {
@@ -347,7 +352,7 @@ private fun ModuleList(
         val changelogResult = loadingDialog.withLoading {
             withContext(Dispatchers.IO) {
                 runCatching {
-                    OkHttpClient().newCall(
+                    ksuApp.okhttpClient.newCall(
                         okhttp3.Request.Builder().url(changelogUrl).build()
                     ).execute().body!!.string()
                 }
@@ -489,7 +494,7 @@ private fun ModuleList(
             },
         ) {
             when {
-                !viewModel.isDummy -> {
+                !viewModel.isOverlayAvailable -> {
                     item {
                         Box(
                             modifier = Modifier.fillParentMaxSize(),
@@ -519,7 +524,6 @@ private fun ModuleList(
 
                 else -> {
                     items(viewModel.moduleList) { module ->
-                        var isChecked by rememberSaveable(module) { mutableStateOf(module.enabled) }
                         val scope = rememberCoroutineScope()
                         val updatedModule by produceState(initialValue = Triple("", "", "")) {
                             scope.launch(Dispatchers.IO) {
@@ -530,7 +534,6 @@ private fun ModuleList(
                         ModuleItem(
                             navigator = navigator,
                             module = module,
-                            isChecked = isChecked,
                             updateUrl = updatedModule.first,
                             onUninstall = {
                                 scope.launch { onModuleUninstall(module) }
@@ -542,11 +545,10 @@ private fun ModuleList(
                                 scope.launch {
                                     val success = loadingDialog.withLoading {
                                         withContext(Dispatchers.IO) {
-                                            toggleModule(module.dirId, !isChecked)
+                                            toggleModule(module.dirId, !module.enabled)
                                         }
                                     }
                                     if (success) {
-                                        isChecked = it
                                         viewModel.fetchModuleList()
 
                                         val result = snackBarHost.showSnackbar(
@@ -558,7 +560,7 @@ private fun ModuleList(
                                             reboot()
                                         }
                                     } else {
-                                        val message = if (isChecked) failedDisable else failedEnable
+                                        val message = if (module.enabled) failedDisable else failedEnable
                                         snackBarHost.showSnackbar(message.format(module.name))
                                     }
                                 }
@@ -574,7 +576,7 @@ private fun ModuleList(
                                 }
                             },
                             onClick = {
-                                onClickModule(it.id, it.name, it.hasWebUi)
+                                onClickModule(it.dirId, it.name, it.hasWebUi)
                             }
                         )
 
@@ -594,7 +596,6 @@ private fun ModuleList(
 fun ModuleItem(
     navigator: DestinationsNavigator,
     module: ModuleViewModel.ModuleInfo,
-    isChecked: Boolean,
     updateUrl: String,
     onUninstall: (ModuleViewModel.ModuleInfo) -> Unit,
     onRestore: (ModuleViewModel.ModuleInfo) -> Unit,
@@ -609,22 +610,22 @@ fun ModuleItem(
         val interactionSource = remember { MutableInteractionSource() }
         val indication = LocalIndication.current
         val viewModel = viewModel<ModuleViewModel>()
+        
+        val context = LocalContext.current
+        val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+
+        var developerOptionsEnabled by rememberSaveable {
+            mutableStateOf(
+                prefs.getBoolean("enable_developer_options", false)
+            )
+        }
+
+        LaunchedEffect(Unit) {
+            developerOptionsEnabled = prefs.getBoolean("enable_developer_options", false)
+        }
 
         Column(
             modifier = Modifier
-                .run {
-                    if (module.hasWebUi) {
-                        toggleable(
-                            value = isChecked,
-                            interactionSource = interactionSource,
-                            role = Role.Button,
-                            indication = indication,
-                            onValueChange = { onClick(module) }
-                        )
-                    } else {
-			this
-		    }
-                }
                 .padding(22.dp, 18.dp, 22.dp, 12.dp)
         ) {
             Row(
@@ -633,6 +634,10 @@ fun ModuleItem(
             ) {
                 val moduleVersion = stringResource(id = R.string.module_version)
                 val moduleAuthor = stringResource(id = R.string.module_author)
+                val moduleId = stringResource(id = R.string.module_id)
+                val moduleVersionCode = stringResource(id = R.string.module_version_code)
+                val moduleUpdateJson = stringResource(id = R.string.module_update_json)
+                val moduleUpdateJsonEmpty = stringResource(id = R.string.module_update_json_empty)
 
                 Column(
                     modifier = Modifier.fillMaxWidth(0.8f)
@@ -661,6 +666,33 @@ fun ModuleItem(
                         fontFamily = MaterialTheme.typography.bodySmall.fontFamily,
                         textDecoration = textDecoration
                     )
+
+                    if (developerOptionsEnabled) {
+
+                        Text(
+                            text = "$moduleId: ${module.id}",
+                            fontSize = MaterialTheme.typography.bodySmall.fontSize,
+                            lineHeight = MaterialTheme.typography.bodySmall.lineHeight,
+                            fontFamily = MaterialTheme.typography.bodySmall.fontFamily,
+                            textDecoration = textDecoration
+                        )
+
+                        Text(
+                            text = "$moduleVersionCode: ${module.versionCode}",
+                            fontSize = MaterialTheme.typography.bodySmall.fontSize,
+                            lineHeight = MaterialTheme.typography.bodySmall.lineHeight,
+                            fontFamily = MaterialTheme.typography.bodySmall.fontFamily,
+                            textDecoration = textDecoration
+                        )
+
+                        Text(
+                            text = if (module.updateJson.isNotEmpty()) "$moduleUpdateJson: ${module.updateJson}" else "$moduleUpdateJson: $moduleUpdateJsonEmpty",
+                            fontSize = MaterialTheme.typography.bodySmall.fontSize,
+                            lineHeight = MaterialTheme.typography.bodySmall.lineHeight,
+                            fontFamily = MaterialTheme.typography.bodySmall.fontFamily,
+                            textDecoration = textDecoration
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.weight(1f))
@@ -671,7 +703,7 @@ fun ModuleItem(
                 ) {
                     Switch(
                         enabled = !module.update,
-                        checked = isChecked,
+                        checked = module.enabled,
                         onCheckedChange = onCheckChanged,
                         interactionSource = if (!module.hasWebUi) interactionSource else null
                     )
@@ -704,6 +736,7 @@ fun ModuleItem(
                 if (module.hasActionScript) {
                     FilledTonalButton(
                         modifier = Modifier.defaultMinSize(52.dp, 32.dp),
+                        enabled = !module.remove && module.enabled,
                         onClick = {
                             navigator.navigate(ExecuteModuleActionScreenDestination(module.dirId))
                             viewModel.markNeedRefresh()
@@ -731,6 +764,7 @@ fun ModuleItem(
                 if (module.hasWebUi) {
                     FilledTonalButton(
                         modifier = Modifier.defaultMinSize(52.dp, 32.dp),
+                        enabled = !module.remove && module.enabled,
                         onClick = { onClick(module) },
                         interactionSource = interactionSource,
                         contentPadding = ButtonDefaults.TextButtonContentPadding
@@ -756,6 +790,7 @@ fun ModuleItem(
                 if (updateUrl.isNotEmpty()) {
                     Button(
                         modifier = Modifier.defaultMinSize(52.dp, 32.dp),
+                        enabled = !module.remove,
                         onClick = { onUpdate(module) },
                         shape = ButtonDefaults.textShape,
                         contentPadding = ButtonDefaults.TextButtonContentPadding
@@ -810,7 +845,7 @@ fun ModuleItem(
                             imageVector = Icons.Outlined.Delete,
                             contentDescription = null
                         )
-                        if (!module.hasActionScript && !module.hasWebUi && updateUrl.isEmpty()) {  
+                        if (!module.hasActionScript && !module.hasWebUi && updateUrl.isEmpty()) {
                             Text(
                                 modifier = Modifier.padding(start = 7.dp),
                                 fontFamily = MaterialTheme.typography.labelMedium.fontFamily,
@@ -843,5 +878,5 @@ fun ModuleItemPreview() {
         hasActionScript = false,
         dirId = "dirId"
     )
-    ModuleItem(EmptyDestinationsNavigator, module, true, "", {}, {}, {}, {}, {})
+    ModuleItem(EmptyDestinationsNavigator, module, "", {}, {}, {}, {}, {})
 }
