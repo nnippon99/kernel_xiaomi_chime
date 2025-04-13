@@ -39,6 +39,18 @@ perform_cleanup() {
 # Sets up or update KernelSU-Next environment
 setup_kernelsu() {
     echo "[+] Setting up KernelSU-Next..."
+    test -d "$GKI_ROOT/KernelSU-Next" || git clone https://github.com/KernelSU-Next/KernelSU-Next && echo "[+] Repository cloned."
+    cd "$GKI_ROOT/KernelSU-Next"
+    git stash && echo "[-] Stashed current changes."
+    if [ "$(git status | grep -Po 'v\d+(\.\d+)*' | head -n1)" ]; then
+        git checkout next && echo "[-] Switched to next branch."
+    fi
+    git pull && echo "[+] Repository updated."
+    if [ -z "${1-}" ]; then
+        git checkout "$(git describe --abbrev=0 --tags)" && echo "[-] Checked out latest tag."
+    else
+        git checkout "$1" && echo "[-] Checked out $1." || echo "[-] Checkout default branch"
+    fi
     cd "$DRIVER_DIR"
     ln -sf "$(realpath --relative-to="$DRIVER_DIR" "$GKI_ROOT/KernelSU-Next/kernel")" "kernelsu" && echo "[+] Symlink created."
 
@@ -56,6 +68,7 @@ elif [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     display_usage
 elif [ "$1" = "--cleanup" ]; then
     initialize_variables
+    perform_cleanup
 else
     initialize_variables
     setup_kernelsu "$@"
