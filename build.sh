@@ -3,6 +3,7 @@
 # Setup VM Variables
 echo -e "Initialize VM Variables..."
 KERNEL_PATH=$PWD
+KSU="KernelSU-Next-susfs"
 AK3="AnyKernel3"
 TC="toolchain"
 DEFCONFIG="vendor/xiaomi/bengal_defconfig"
@@ -25,7 +26,7 @@ echo -e "Cloning AnyKernel3..."
 git clone https://github.com/nnippon99/AnyKernel3 -b main AnyKernel3 -q --depth=1
 
 echo -e "Cloning Lilium toolchain..."
-mkdir toolchain && cd toolchain && wget https://github.com/liliumproject/clang/releases/download/20241221/lilium_clang-20241221.tar.gz -q -O lilium.tar.gz && tar -xf lilium.tar.gz && cd ..
+mkdir toolchain && cd toolchain && wget https://github.com/liliumproject/clang/releases/download/20250413/lilium_clang-20250413.tar.gz -q -O lilium.tar.gz && tar -xf lilium.tar.gz && cd ..
 
 echo -e "Building Lilium Kernel..."
 export PATH=$PWD/toolchain/bin:$PATH
